@@ -1,0 +1,218 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IP INFO TOOL</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+
+    :root{
+      --bg:#071028;
+      --card: rgba(255,255,255,0.03);
+      --glass: rgba(255,255,255,0.03);
+      --accent1:#00d4ff;
+      --accent2:#7c5cff;
+      --muted: #9aa4b2;
+      --danger: #ff6b6b;
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;padding:0;background:linear-gradient(180deg,#020617 0%, #071428 60%);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;color:#e6eef8}
+
+    .wrap{max-width:980px;margin:28px auto;padding:28px}
+
+    header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+    h1{margin:0;font-size:20px;color:var(--accent1);letter-spacing:0.6px}
+    .subtitle{color:var(--muted);font-size:13px}
+
+    .card{background:var(--card);backdrop-filter:blur(6px);border-radius:12px;padding:18px;box-shadow:0 6px 30px rgba(2,6,23,0.6)}
+
+    .controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .input{flex:1;min-width:220px}
+    input[type=text]{width:100%;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit;font-size:15px}
+
+    .btn{padding:10px 14px;border-radius:10px;border:none;cursor:pointer;font-weight:600}
+    .btn-primary{background:linear-gradient(90deg,var(--accent1),var(--accent2));color:#021;box-shadow:0 6px 18px rgba(124,92,255,0.14)}
+    .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+
+    #output{margin-top:16px;display:none}
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .info-item{background:rgba(255,255,255,0.02);padding:10px;border-radius:8px;font-size:14px}
+    .info-key{color:var(--muted);font-size:12px}
+    .info-val{color:#e6eef8;margin-top:4px;font-weight:600}
+
+    #map{width:100%;height:320px;border-radius:10px;margin-top:14px;display:none;overflow:hidden}
+
+    #errorBox{display:none;margin-top:12px;padding:10px;border-radius:8px;background:rgba(255,107,107,0.08);color:var(--danger);border:1px solid rgba(255,107,107,0.2)}
+
+    .meta{display:flex;align-items:center;gap:8px;margin-top:10px}
+    .meta img.flag{width:28px;height:18px;object-fit:cover;border-radius:3px}
+
+    footer{text-align:center;color:var(--muted);font-size:12px;margin-top:18px}
+
+    @media (max-width:600px){.info-grid{grid-template-columns:1fr}.wrap{padding:16px}.controls{flex-direction:column;align-items:stretch}}
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>IP INFO TOOL</h1>
+        <div class="subtitle">Quick IP lookup with map preview</div>
+      </div>
+      <div class="subtitle">DEVELOPED BY: MOAZZAM KHAN</div>
+    </header>
+
+    <div class="card">
+      <div class="controls">
+        <div class="input">
+          <input type="text" id="ipInput" placeholder="Enter IP address or Coordinates (lat,lon)">
+        </div>
+        <button id="scanBtn" class="btn btn-primary">SCAN</button>
+        <button id="clearBtn" class="btn btn-ghost">CLEAR</button>
+      </div>
+
+      <div id="errorBox"></div>
+
+      <div id="output">
+        <!-- dynamic info goes here -->
+      </div>
+
+      <div id="map"></div>
+
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <a class="btn btn-ghost" href="https://whatsapp.com/channel/0029VbB5rqQIiRokILC0p23M" target="_blank">Join WhatsApp</a>
+        <button id="copyBtn" class="btn btn-ghost">Copy IP</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let map;
+
+    function isLocalIP(ip) {
+      return ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("127.") || ip === "::1";
+    }
+
+    function showError(message) {
+      const errorBox = document.getElementById('errorBox');
+      errorBox.innerText = message;
+      errorBox.style.display = 'block';
+      setTimeout(() => errorBox.style.display = 'none', 5000);
+    }
+
+    function renderOutput(data){
+      const out = document.getElementById('output');
+      const flagUrl = data.country_flag || data.country_flag_png || null;
+      const flagEmoji = data.country_flag_emoji || null;
+      const items = [
+        {k:'IP', v: data.ip || 'N/A'},
+        {k:'City', v: data.city || 'N/A'},
+        {k:'Region', v: data.region || 'N/A'},
+        {k:'Country', v: data.country || 'N/A'},
+        {k:'ISP', v: data.connection && data.connection.org ? data.connection.org : (data.org || 'N/A')},
+        {k:'Latitude', v: data.latitude || 'N/A'},
+        {k:'Longitude', v: data.longitude || 'N/A'},
+        {k:'Timezone', v: data.timezone && data.timezone.id ? data.timezone.id : (data.timezone_gmt || 'N/A')}
+      ];
+
+      let html = '<div class="meta">';
+      if(flagUrl) html += `<img class="flag" src="${flagUrl}" alt="flag">`;
+      else if(flagEmoji) html += `<div style="font-size:18px">${flagEmoji}</div>`;
+      html += `<div style="margin-left:8px;color:var(--muted)">${data.country || ''}</div>`;
+      html += '</div>';
+
+      html += '<div class="info-grid">';
+      for(const it of items){
+        html += `<div class="info-item"><div class="info-key">${it.k}</div><div class="info-val">${it.v}</div></div>`;
+      }
+      html += '</div>';
+
+      out.innerHTML = html;
+      out.style.display = 'block';
+    }
+
+    async function getIPInfo() {
+      const inputEl = document.getElementById('ipInput');
+      const input = inputEl.value.trim();
+      const output = document.getElementById('output');
+      const mapContainer = document.getElementById('map');
+      const errorBox = document.getElementById('errorBox');
+      const scanBtn = document.getElementById('scanBtn');
+
+      output.style.display = 'none';
+      mapContainer.style.display = 'none';
+      output.innerHTML = '';
+      errorBox.style.display = 'none';
+
+      if (!input) { showError('Please enter an IP or coordinates.'); return; }
+
+      if (/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(input)) {
+        const [lat, lon] = input.split(',').map(Number);
+        if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+          showError('Invalid coordinates.');
+          return;
+        }
+        renderOutput({country:'Coordinates', latitude:lat, longitude:lon, ip: 'N/A'});
+        showMap(lat, lon, `Lat: ${lat}, Lon: ${lon}`);
+        return;
+      }
+
+      if (isLocalIP(input)) {
+        showError('Local IP addresses are not supported.');
+        return;
+      }
+
+      try {
+        scanBtn.disabled = true; scanBtn.textContent = 'Searching...';
+        const res = await fetch(`https://ipwho.is/${input}`);
+        const data = await res.json();
+        scanBtn.disabled = false; scanBtn.textContent = 'SCAN';
+
+        if (!data || data.success === false || !data.ip) {
+          showError('Could not find information for this IP.');
+          return;
+        }
+
+        renderOutput(data);
+        if (data.latitude && data.longitude) showMap(data.latitude, data.longitude, `${data.city || data.country || 'Location'}`);
+      } catch (e) {
+        scanBtn.disabled = false; scanBtn.textContent = 'SCAN';
+        showError('Could not fetch data for this IP.');
+      }
+    }
+
+    function showMap(lat, lon, popupText) {
+      const mapContainer = document.getElementById('map');
+      mapContainer.style.display = 'block';
+      if (map) map.remove();
+      map = L.map('map').setView([lat, lon], 10);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+      L.marker([lat, lon]).addTo(map).bindPopup(popupText).openPopup();
+      setTimeout(() => { map.invalidateSize(); }, 300);
+    }
+
+    function clearInput(){
+      document.getElementById('ipInput').value = '';
+      document.getElementById('output').style.display = 'none';
+      document.getElementById('map').style.display = 'none';
+    }
+
+    function copyIP(){
+      const out = document.getElementById('output');
+      const ip = out.querySelector('.info-item .info-val')?.innerText || '';
+      if(!ip) { showError('No IP to copy'); return; }
+      navigator.clipboard?.writeText(ip).then(()=>{ alert('IP copied to clipboard'); }).catch(()=>{ showError('Copy failed'); });
+    }
+
+    document.getElementById('scanBtn').addEventListener('click', getIPInfo);
+    document.getElementById('clearBtn').addEventListener('click', clearInput);
+    document.getElementById('copyBtn').addEventListener('click', copyIP);
+
+  </script>
+</body>
+</html>
